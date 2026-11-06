@@ -7,6 +7,15 @@ foreach ($plans as $p) {
 if (!$selPlan && $plans) $selPlan = $plans[0];
 $selMonths = isset($old['months']) ? (int)$old['months'] : 1;
 $selNode = isset($old['node_id']) ? (int)$old['node_id'] : 0;
+// 未指定节点时，默认选中第一个在线节点（避免所有节点都被高亮、或一个都没选中）
+if (!$selNode) {
+    foreach ($nodes as $n) {
+        if ($n['status'] === 'online') {
+            $selNode = (int)$n['id'];
+            break;
+        }
+    }
+}
 $selOs = $old['os'] ?? ($osOptions[0] ?? '');
 $selMethod = $old['method'] ?? 'wallet';
 $selName = $old['instance_name'] ?? '';
@@ -64,11 +73,16 @@ $total = $monthly * $selMonths + $setup;
                 <div class="card-body">
                     <div class="node-options" id="nodeOptions">
                         <?php foreach ($nodes as $n): ?>
-                            <?php $online = $n['status'] === 'online'; $pct = $n['capacity'] > 0 ? min(100, round((int)$n['used'] / (int)$n['capacity'] * 100)) : 0; ?>
-                            <label class="node-option <?= (!$selNode && $online) ? 'active' : ($selNode === (int)$n['id'] ? 'active' : '') ?> <?= $online ? '' : 'disabled' ?>">
+                            <?php
+                            $online = $n['status'] === 'online';
+                            $pct = $n['capacity'] > 0 ? min(100, round((int)$n['used'] / (int)$n['capacity'] * 100)) : 0;
+                            $checked = $online && $selNode === (int)$n['id'];
+                            ?>
+                            <label class="node-option <?= $checked ? 'active' : '' ?> <?= $online ? '' : 'disabled' ?>"
+                                   data-node="<?= (int)$n['id'] ?>" data-name="<?= e($n['name']) ?>">
                                 <input type="radio" name="node_id" value="<?= (int)$n['id'] ?>"
                                     <?= $online ? '' : 'disabled' ?>
-                                    <?= ($selNode === (int)$n['id']) ? 'checked' : ((!$selNode && $online) ? 'checked' : '') ?> style="display:none">
+                                    <?= $checked ? 'checked' : '' ?> style="display:none">
                                 <span class="node-flag" style="font-size:18px"><?= e($n['flag']) ?></span>
                                 <div style="flex:1;min-width:0">
                                     <b><?= e($n['name']) ?></b>
@@ -136,6 +150,7 @@ $total = $monthly * $selMonths + $setup;
             <div class="card-head"><h3>订单摘要</h3></div>
             <div class="card-body">
                 <div class="summary-line"><span>套餐</span><b id="sumPlan"><?= e($selPlan['name'] ?? '—') ?></b></div>
+                <div class="summary-line"><span>节点</span><b id="sumNode">—</b></div>
                 <div class="summary-line"><span>周期</span><b id="sumMonths"><?= (int)$selMonths ?> 个月</b></div>
                 <div class="summary-line"><span>月费</span><b id="sumMonthly"><?= e(money($monthly)) ?></b></div>
                 <div class="summary-line"><span>安装费</span><b id="sumSetup"><?= e(money($setup)) ?></b></div>
@@ -158,8 +173,34 @@ $total = $monthly * $selMonths + $setup;
   var sumSetup = document.getElementById('sumSetup');
   var sumMonths = document.getElementById('sumMonths');
   var sumTotal = document.getElementById('sumTotal');
+  var nodeBox = document.getElementById('nodeOptions');
+  var sumNode = document.getElementById('sumNode');
 
   function fmt(c){ return '¥' + (c/100).toFixed(c%100===0?0:2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+
+  function syncNodeSummary(){
+    if(!sumNode) return;
+    var active = nodeBox ? nodeBox.querySelector('.node-option.active') : null;
+    sumNode.textContent = active ? active.dataset.name : '—';
+  }
+
+  // 节点选择：点击高亮 + 同步摘要（维护中的节点不可选）
+  if(nodeBox){
+    nodeBox.addEventListener('click', function(e){
+      var opt = e.target.closest('.node-option');
+      if(!opt) return;
+      var input = opt.querySelector('input');
+      if(opt.classList.contains('disabled') || !input || input.disabled){
+        e.preventDefault();
+        return;
+      }
+      nodeBox.querySelectorAll('.node-option').forEach(function(o){o.classList.remove('active');});
+      opt.classList.add('active');
+      input.checked = true;
+      syncNodeSummary();
+    });
+    syncNodeSummary();
+  }
 
   function updateSummary(){
     var active = picker.querySelector('.plan-option.active');
